@@ -1,7 +1,11 @@
 """Gemini API: структурована JSON-відповідь за схемою."""
+import asyncio
 import json
+import logging
 
 import httpx
+
+log = logging.getLogger("ai")
 
 API = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
@@ -50,10 +54,16 @@ class AIError(Exception):
     pass
 
 
+RETRY_STATUSES = {429, 500, 503}  # ліміт або перевантаження: варто повторити
+
+
 class Gemini:
-    def __init__(self, api_key: str, model: str):
-        self.url = API.format(model=model)
-        self.http = httpx.AsyncClient(headers={"x-goog-api-key": api_key}, timeout=60)
+    def __init__(self, api_key: str, model: str, fallback_model: str = ""):
+        # Основна модель пробується двічі, далі запасна.
+        self.attempts = [model, model]
+        if fallback_model and fallback_model != model:
+            self.attempts.append(fallback_model)
+        self.http = httpx.AsyncClient(headers={"x-goog-api-key": api_key}, timeout=40)
 
     async def close(self) -> None:
         await self.http.aclose()
@@ -68,15 +78,29 @@ class Gemini:
                 "temperature": 0.1,
             },
         }
-        r = await self.http.post(self.url, json=body)
-        if r.status_code != 200:
-            raise AIError(f"Gemini API {r.status_code}: {r.text[:300]}")
-        try:
-            parts = r.json()["candidates"][0]["content"]["parts"]
-            text = "".join(p.get("text", "") for p in parts if not p.get("thought"))
-            return json.loads(text)
-        except (KeyError, IndexError, TypeError, json.JSONDecodeError) as e:
-            raise AIError(f"Не вдалося розібрати відповідь Gemini: {e}") from e
+        last_error = ""
+        for i, model in enumerate(self.attempts):
+            if i:
+                await asyncio.sleep(2)
+            try:
+                r = await self.http.post(API.format(model=model), json=body)
+            except httpx.HTTPError as e:  # таймаут або обрив з'єднання
+                last_error = f"{model}: {type(e).__name__}"
+                log.warning("Gemini, спроба %d: %s", i + 1, last_error)
+                continue
+            if r.status_code in RETRY_STATUSES:
+                last_error = f"{model}: HTTP {r.status_code}"
+                log.warning("Gemini, спроба %d: %s", i + 1, last_error)
+                continue
+            if r.status_code != 200:
+                raise AIError(f"Gemini API {r.status_code}: {r.text[:300]}")
+            try:
+                parts = r.json()["candidates"][0]["content"]["parts"]
+                text = "".join(p.get("text", "") for p in parts if not p.get("thought"))
+                return json.loads(text)
+            except (KeyError, IndexError, TypeError, json.JSONDecodeError) as e:
+                raise AIError(f"Не вдалося розібрати відповідь Gemini: {e}") from e
+        raise AIError(f"Gemini недоступний після {len(self.attempts)} спроб ({last_error})")
 
     async def extract_vacancy(self, text: str) -> dict:
         data = await self._json(EXTRACT_PROMPT, text, VACANCY_SCHEMA)

@@ -35,7 +35,7 @@ STATUS_LABELS = {
 MIN_VACANCY_CHARS = 200
 
 db = DB(config.SUPABASE_URL, config.SUPABASE_KEY)
-ai = Gemini(config.GEMINI_API_KEY, config.GEMINI_MODEL)
+ai = Gemini(config.GEMINI_API_KEY, config.GEMINI_MODEL, config.GEMINI_FALLBACK_MODEL)
 
 
 def allowed(update: Update) -> bool:
@@ -121,7 +121,7 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
     except AIError as e:
         log.error("Gemini: %s", e)
-        await msg.reply_text("ШІ не зміг розібрати вакансію. Спробуй ще раз.")
+        await msg.reply_text("ШІ зараз перевантажений або не відповів. Спробуй ще раз за хвилину.")
         return
     except Exception:
         log.exception("Не вдалося зберегти вакансію")

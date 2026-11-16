@@ -19,6 +19,8 @@ SUPABASE_URL = _required("SUPABASE_URL")
 SUPABASE_KEY = _required("SUPABASE_KEY")
 
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-flash-latest").strip()
+# Запасна модель, якщо основна перевантажена (503) або не відповідає.
+GEMINI_FALLBACK_MODEL = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-flash-lite-latest").strip()
 
 # Твій стек для /match, через кому: "Python, SQL, React"
 MY_STACK = [s.strip() for s in os.getenv("MY_STACK", "").split(",") if s.strip()]
