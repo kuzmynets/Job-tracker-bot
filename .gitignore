@@ -1,0 +1,10 @@
+.env
+.env.local
+.venv/
+.idea/
+__pycache__/
+*.pyc
+node_modules/
+.next/
+next-env.d.ts
+.vercel/
